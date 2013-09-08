@@ -23,7 +23,8 @@ THE SOFTWARE.
 ]]
 
 
-assert(love, "love (https://love2d.org/) is required.")
+assert(love, "LOVE (https://love2d.org/) is required.")
+assert(love._version_major > 0 or love._version_minor >= 9, "LOVE version 0.9.0+ is required.")
 
 
 local type, pcall, unpack = type, pcall, unpack
@@ -66,7 +67,7 @@ local function new_mutex(other)
 		m.owner = other.owner
 		m.channel = other.channel
 		m.name = other.name
-	else
+	elseif other == nil then
 		-- Create a completely new mutex.
 		-- m.owner keeps track of the thread which currently owns the mutex.
 		m.owner = love.thread.newChannel()
@@ -74,6 +75,11 @@ local function new_mutex(other)
 		-- the mutex is unlocked if a shared resource in m.channel exists.
 		m.channel = love.thread.newChannel()
 		m.channel:push(true)
+	end
+	
+	if type(m.channel) ~= "userdata" or not getmetatable(m.channel).typeOf
+	or not m.channel:typeOf("Channel") then
+		error("Could not create mutex.", 2)
 	end
 	
 	-- Counter required for locking multiple times in the same thread.
@@ -118,19 +124,20 @@ end
 
 function Mutex:unlock()
 	-- We can only unlock the mutex if we own it.
-	if self.owner:peek() == thread_id then
-		if self.recursive > 0 then
-			-- This thread has locked the mutex multiple times, so just
-			-- decrement the counter and report success.
-			self.recursive = self.recursive - 1
-		else
-			-- Clear the owner thread ID *before* unlocking.
-			self.owner:clear()
-			self.channel:push(true)
-		end
-		return true
+	if self.owner:peek() ~= thread_id then
+		return false
 	end
-	return false
+	
+	if self.recursive > 0 then
+		-- This thread has locked the mutex multiple times, so just decrement
+		-- the counter and report success.
+		self.recursive = self.recursive - 1
+	else
+		-- Clear the owner thread ID *before* unlocking.
+		self.owner:clear()
+		self.channel:push(true)
+	end
+	return true
 end
 
 function Mutex:lockFunction(func, ...)
